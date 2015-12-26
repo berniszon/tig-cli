@@ -1,1 +1,5 @@
 # Don't spill your environment - exclude IDE and OS files in your private .gitignore
+
+# python project
+*.pyc
+venv/
