@@ -1,4 +1,4 @@
-#!/Users/grzegorz/Projects/Tig/tig-cli/venv/bin/python
+#!/Users/grzegorz/Projects/Tig/venv/bin/python
 import sys
 import os
 import subprocess
@@ -10,7 +10,7 @@ from git import Repo
 
 
 # TODO config
-REMOTE = '/Users/grzegorz/Projects/Tig/tig-service/remotes'
+REMOTE = '/Users/grzegorz/Projects/Tig/remotes'
 TEAM = 'sigmapoint'
 NAME = 'sikor'
 
@@ -182,7 +182,29 @@ def tasks(arguments):
     JSON = any([a in ('--json') for a in arguments])
 
     # TODO
-    raw_tasks = []
+    raw_tasks = [
+        {
+            "order": 1,
+            "name": "Lorem ipsum",
+            "description": "dolor sit amet",
+            "author": "sikor",
+            "date": "2015-12-30T00:00:00Z",
+        },
+        {
+            "order": 2,
+            "name": "consectetur adipiscing",
+            "description": "elit sed do",
+            "author": "sikor",
+            "date": "2015-12-30T00:00:00Z",
+        },
+        {
+            "order": 3,
+            "name": "incididunt ut labore",
+            "description": "et dolore magna aliqua",
+            "author": "sikor",
+            "date": "2015-12-30T00:00:00Z",
+        },
+    ]
 
     if JSON:
         output = json.dumps(raw_tasks)
