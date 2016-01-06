@@ -3,10 +3,13 @@ import sys
 import os
 import subprocess
 import time
+from contextlib import contextmanager
+import json
 
 from git import Repo
 
 
+# TODO config
 REMOTE = '/Users/grzegorz/Projects/Tig/tig-service/remotes'
 TEAM = 'sigmapoint'
 NAME = 'sikor'
@@ -45,15 +48,18 @@ class FileSystemMockAPI(object):
 
 api = FileSystemMockAPI(REMOTE, TEAM, NAME)
 
-def daemon():
-    SLEEP_TIME = 5  # seconds
-    while True:
-        save()
-        time.sleep(SLEEP_TIME)
+
 
 def get_sync_branch(branch):
     if branch.endswith('/' + NAME):
         return branch[:-len('/' + NAME)]
+
+@contextmanager
+def temporary_branch(repo):
+    name = 'tig/temporary'
+    repo.create_branch(name)
+    yield name
+    repo.delete_branch(name)
 
 def sync_repo(resolve=False):
     repo = Repo(os.getcwd())
@@ -61,6 +67,18 @@ def sync_repo(resolve=False):
     sync_branch = get_sync_branch(repo.current_branch)
     if sync_branch:
         repo.merge(sync_branch)
+        # TODO check if merge worked
+        merge_worked = False
+        if merge_worked:
+            # TODO merge our changes up and push
+            pass
+        else:
+            if resolve:
+                # TODO
+                pass
+            else:
+                # TODO
+                pass
     else:
         print 'Unable to sync - you are not on a synching branch'
 
@@ -154,10 +172,32 @@ def sync(arguments):
     RESOLVE = any([a in ('-r', '--resolve') for a in arguments])
     sync_repo(RESOLVE)
 
+def daemon(arguments):
+    SLEEP_TIME = 5  # seconds
+    while True:
+        save()
+        time.sleep(SLEEP_TIME)
+
+def tasks(arguments):
+    JSON = any([a in ('--json') for a in arguments])
+
+    # TODO
+    raw_tasks = []
+
+    if JSON:
+        output = json.dumps(raw_tasks)
+    else:
+        # TODO
+        output = 'Current tasks:\n{}'.format(raw_tasks)
+
+    print output
+
 commands = {
     'init': init,
     'save': save,
     'sync': sync,
+    'daemon': daemon,
+    'tasks': tasks,
 }
 
 if __name__ == "__main__":
@@ -170,17 +210,3 @@ if __name__ == "__main__":
             print tig_usage()
     else:
         print tig_usage()
-    #     elif sys.argv[1] == 'daemon':
-    #         daemon()
-    #     elif sys.argv[1] == 'tasks':
-    #         if len(sys.argv) > 2:
-    #             #
-    #             pass
-    #         else:
-    #
-    #         daemon()
-    #     else:
-    #         print 'Command not found: {}'.format(sys.argv[1])
-    #         print TIG_USAGE
-    # else:
-    #     print TIG_USAGE

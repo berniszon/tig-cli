@@ -15,7 +15,7 @@ log_matcher = re.compile(LOG_PATTERN)
 
 
 class Repo(object):
-    """Git CLI sucks, most methods here don't follow it's semantics.
+    """Git CLI sucks, most methods here don't follow it's default semantics.
 """
     def __init__(self, path):
         self._path = path
@@ -35,7 +35,7 @@ class Repo(object):
 
     @property
     def changes(self):
-        # TODO maybe some parsing into friendlier format, so far need the list to not be empty
+        # TODO maybe some parsing into friendlier format
         return self._execute('status --porcelain').split('\n')[:-1]
 
     @property
@@ -81,6 +81,10 @@ class Repo(object):
         # TODO consider adding option to change to the newly created branch
         assert name not in self.branches
         return self._execute("branch {} {}".format(name, revision))
+
+    def delete_branch(self, name):
+        assert name in self.branches
+        return self._execute("branch -d {}".format(name))
 
     def change_branch(self, name):
         assert name in self.branches
