@@ -51,12 +51,18 @@ def daemon():
         save()
         time.sleep(SLEEP_TIME)
 
+def get_sync_branch(branch):
+    if branch.endswith('/' + NAME):
+        return branch[:-len('/' + NAME)]
 
-def save():
+def sync_repo(resolve=False):
     repo = Repo(os.getcwd())
-    if repo.changes:  # apparently empty list is falsy
-        repo.add()
-        repo.commit('Automated commit')
+
+    sync_branch = get_sync_branch(repo.current_branch)
+    if sync_branch:
+        repo.merge(sync_branch)
+    else:
+        print 'Unable to sync - you are not on a synching branch'
 
 
 def project_exists(name):
@@ -71,6 +77,8 @@ def init_project(project_name):
         api.create_project(project_name)
         repo = Repo.clone(api.project_url(project_name), '.', project_name)
 
+
+        # TODO this is a silly way to create an initial config, with file contents in a silly spot among the code
         with open(os.path.join(project_name, 'README.md'), 'w') as f:
             default_readme = '''# TODO
 '''
@@ -114,30 +122,65 @@ indent-size = 2
     repo.create_branch(branch_name)
     repo.change_branch(branch_name)
 
+# TODO each of these usage functions should just be part of an instruction
 def init_usage():
     return '''Usage:
   tig init :project-name'''
 
 def tig_usage():
-    return '''Usage:
-  tig init :project-name
+    # this is a function and not just a flat value to remind me to add some dynamic data to it
+    return '''init :project-name
     Join or create a new project'''
 
+
+def init(arguments):
+    if len(arguments) > 0:
+        project_name = arguments[0]
+        init_project(project_name)
+    else:
+        print init_usage()
+
+def save(arguments):
+    if len(arguments) > 0:
+        # TODO handle arguments
+        pass  # for now just dismiss them
+    repo = Repo(os.getcwd())
+    if repo.changes:  # apparently empty list is falsy
+        repo.add()
+        repo.commit('Automated commit')
+
+def sync(arguments):
+    # TODO improve flag parsing
+    RESOLVE = any([a in ('-r', '--resolve') for a in arguments])
+    sync_repo(RESOLVE)
+
+commands = {
+    'init': init,
+    'save': save,
+    'sync': sync,
+}
+
 if __name__ == "__main__":
-    # TODO properly parse arguments
-    # print sys.argv
     if len(sys.argv) > 1:
-        if sys.argv[1] == 'init':
-            if len(sys.argv) > 2:
-                init_project(sys.argv[2])
-            else:
-                print init_usage()
-        elif sys.argv[1] == 'save':
-            save()
-        elif sys.argv[1] == 'daemon':
-            daemon()
+        command = sys.argv[1]
+        if command in commands.keys():
+            commands[command](sys.argv[2:])
         else:
-            print 'Command not found: {}'.format(sys.argv[1])
+            print 'Command not found: {}'.format(command)
             print tig_usage()
     else:
         print tig_usage()
+    #     elif sys.argv[1] == 'daemon':
+    #         daemon()
+    #     elif sys.argv[1] == 'tasks':
+    #         if len(sys.argv) > 2:
+    #             #
+    #             pass
+    #         else:
+    #
+    #         daemon()
+    #     else:
+    #         print 'Command not found: {}'.format(sys.argv[1])
+    #         print TIG_USAGE
+    # else:
+    #     print TIG_USAGE
