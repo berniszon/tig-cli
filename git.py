@@ -4,6 +4,7 @@ import os
 import arrow
 
 
+# TODO git probably has some switch to output easily parsable data, remove the re
 CURRENT_BRANCH_PATTERN = r'\*\s+(.*)'
 BRANCH_PATTERN = r'\*?\s+(.*)'
 LOG_PATTERN = r'commit ([a-fA-F0-9]{40})\n' + 'Author: (.+)\s+<(.+)>\n' + 'Date:   (.*)\n' + '\n((    .*\n)+)'
@@ -84,6 +85,10 @@ class Repo(object):
     def change_branch(self, name):
         assert name in self.branches
         return self._execute('checkout {}'.format(name))
+
+    def merge(self, source, destination=None):
+        destination = destination or self.current_branch
+        print 'merging {} into {}'.format(source, destination)
 
     def push(self, remote='origin'):
         """Changed semantic - allow pushes between equaly named branches only,
