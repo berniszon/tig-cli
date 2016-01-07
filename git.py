@@ -1,4 +1,5 @@
 from subprocess import check_output, CalledProcessError
+from contextlib import contextmanager
 import re
 import os
 import arrow
@@ -96,12 +97,41 @@ class Repo(object):
         assert name in self.branches
         return self._execute('checkout {}'.format(name))
 
-    def merge(self, source, destination=None):
-        destination = destination or self.current_branch
-        print 'merging {} into {}'.format(source, destination)
+    def update(self, source, destination=None):
+        """Alternative name for a fast-forward only merge
+"""
+        output = self.merge(source, destination, ff_only=True)
+        assert output
+        return output
 
-    def push(self, remote='origin'):
+    def merge(self, source, destination=None, resolve=False, ff_only=False):
+        destination = destination or self.current_branch
+        with self._switch_branch(destination):
+            print 'merging {} into {}'.format(source, destination)
+            self._execute('merge{} {}'.format(' --ff-only' if ff_only else '', source))
+            merge_worked = not self.changes
+
+            if not merge_worked and not resolve:
+                self._execute('merge --abort')
+
+        return merge_worked
+
+    def push(self, branch=None, remote='origin', flags=''):
         """Changed semantic - allow pushes between equaly named branches only,
 push tags by default
 """
-        return self._execute('push {1} {0}:{0} --tags'.format(self.current_branch, remote))
+        branch = branch or self.current_branch
+        return self._execute('push {1} {0}:{0} --tags {2}'.format(branch, remote, flags))
+
+    def pull(self, branch=None, remote='origin'):
+        branch = branch or self.current_branch
+        with self._switch_branch(branch):
+            return self._execute('pull {1} {0} --tags'.format(branch, remote))
+
+    @contextmanager
+    def _switch_branch(self, name):
+        assert not self.changes
+        return_branch = self.current_branch
+        self.change_branch(name)
+        yield
+        self.change_branch(return_branch)

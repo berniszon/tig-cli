@@ -52,14 +52,15 @@ api = FileSystemMockAPI(REMOTE, TEAM, NAME)
 
 
 def get_sync_branch(branch):
-    if branch.endswith('/' + NAME):
-        return branch[:-len('/' + NAME)]
+    if branch.startswith('tig-') and branch.endswith('-' + NAME):
+        return branch[:-len('-' + NAME)]
 
 
 @contextmanager
-def temporary_branch(repo):
-    name = 'tig/temporary'
-    repo.create_branch(name)
+def temporary_branch(repo, start=None):
+    start = start or repo.current_branch
+    name = 'tig-temporary-'
+    repo.create_branch(name, start)
     yield name
     repo.delete_branch(name)
 
@@ -69,19 +70,21 @@ def sync_repo(resolve=False):
 
     sync_branch = get_sync_branch(repo.current_branch)
     if sync_branch:
-        repo.merge(sync_branch)
-        # TODO check if merge worked
-        merge_worked = False
-        if merge_worked:
-            # TODO merge our changes up and push
-            pass
-        else:
-            if resolve:
-                # TODO
-                pass
+        save()
+        repo.pull(sync_branch)
+        with temporary_branch(repo, sync_branch) as temp_branch:
+            if repo.merge(repo.current_branch, temp_branch, resolve=resolve):
+                repo.update(temp_branch)  # pull onto working branch
+                repo.push()               # update remote
+                repo.update(repo.current_branch, sync_branch)  # update local sync branch
+                repo.push(sync_branch)                         # update remote
             else:
-                # TODO
-                pass
+                if resolve:
+                    # TODO
+                    print 'resolve conflicts'
+                else:
+                    # TODO
+                    print 'abort everything'
     else:
         print 'Unable to sync - you are not on a synching branch'
 
@@ -177,9 +180,13 @@ indent-size = 2
     else:
         repo = Repo.clone(api.project_url(project_name), '.', project_name)
 
-    branch_name = 'tig/master/{}'.format(NAME)
-    repo.create_branch(branch_name)
-    repo.change_branch(branch_name)
+    common_sync_branch_name = 'tig-master'
+    personal_sync_branch_name = common_sync_branch_name + '-{}'.format(NAME)
+
+    repo.create_branch(common_sync_branch_name)
+    repo.pull(common_sync_branch_name)
+    repo.create_branch(personal_sync_branch_name, common_sync_branch_name)
+    repo.change_branch(personal_sync_branch_name)
 
 
 # TODO each of these usage functions should just be part of an instruction
@@ -194,7 +201,7 @@ def tig_usage():
     Join or create a new project'''
 
 
-def init(arguments):
+def init(arguments=[]):
     if len(arguments) > 0:
         project_name = arguments[0]
         init_project(project_name)
@@ -202,7 +209,7 @@ def init(arguments):
         print init_usage()
 
 
-def save(arguments):
+def save(arguments=[]):
     if len(arguments) > 0:
         # TODO handle arguments
         pass  # for now just dismiss them
@@ -211,24 +218,27 @@ def save(arguments):
         repo.add()
         repo.commit('Automated commit')
 
+        sync_branch = get_sync_branch(repo.current_branch)
+        if sync_branch:
+            repo.push(flags='--force')  # only one private branch makes sense
 
-def sync(arguments):
+
+def sync(arguments=[]):
     # TODO improve flag parsing
     RESOLVE = any([a in ('-r', '--resolve') for a in arguments])
     sync_repo(RESOLVE)
 
 
-def daemon(arguments):
+def daemon(arguments=[]):
     SLEEP_TIME = 5  # seconds
     while True:
         save()
         time.sleep(SLEEP_TIME)
 
 
-def tasks(arguments):
+def tasks(arguments=[]):
     JSON = '--json' in arguments
 
-    # TODO
     repo = Repo(os.getcwd())
     commits = repo.log
 
@@ -263,9 +273,17 @@ def tasks(arguments):
     print output
 
 
-def log(arguments):
+def log(arguments=[]):
     repo = Repo(os.getcwd())
     print repo.log
+
+
+def test(arguments=[]):
+    # TODO
+    errors = []
+    if errors:
+        # TODO
+        print reduce(lambda a, b: a + b, map(str, errors), '')
 
 
 commands = {
@@ -274,7 +292,8 @@ commands = {
     'sync': sync,
     'daemon': daemon,
     'tasks': tasks,
-    'log': log,  # test command
+    'log': log,
+    'test': test,
 }
 
 if __name__ == "__main__":
