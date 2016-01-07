@@ -58,11 +58,17 @@ class Repo(object):
                 'hash': l[0],
                 'author': l[1],
                 'email': l[2],
-                'date': arrow.get(l[3]),
+                'date': arrow.get(l[3]).isoformat(),
                 'message': '\n'.join([line[4:] for line in l[4].split('\n')[:-1]]),
             }
-            for l in log_matcher.findall(self._execute('log --date=iso-strict'))
+            for l in log_matcher.findall(self._execute('--no-pager log --date=iso-strict'))
         ]
+
+    # TODO tig doesn't care for index, so no argument diff is useless
+    # feel free to implement defaults
+    # def diff(self, base=None, to=None):
+    def diff(self, base, to):
+        return self._execute('diff {} {}'.format(base, to))
 
     def init(self):
         return self._execute('init')

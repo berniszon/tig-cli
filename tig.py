@@ -5,6 +5,7 @@ import subprocess
 import time
 from contextlib import contextmanager
 import json
+import re
 
 from git import Repo
 
@@ -20,6 +21,7 @@ try:
 except OSError as e:
     # hack dont fail when directories already exist
     pass
+
 
 class FileSystemMockAPI(object):
     # Talks to local file system instead of a real remote
@@ -49,10 +51,10 @@ class FileSystemMockAPI(object):
 api = FileSystemMockAPI(REMOTE, TEAM, NAME)
 
 
-
 def get_sync_branch(branch):
     if branch.endswith('/' + NAME):
         return branch[:-len('/' + NAME)]
+
 
 @contextmanager
 def temporary_branch(repo):
@@ -60,6 +62,7 @@ def temporary_branch(repo):
     repo.create_branch(name)
     yield name
     repo.delete_branch(name)
+
 
 def sync_repo(resolve=False):
     repo = Repo(os.getcwd())
@@ -83,8 +86,46 @@ def sync_repo(resolve=False):
         print 'Unable to sync - you are not on a synching branch'
 
 
+def _diff_to_file_dict(diff):
+    chunks = diff.split('diff --git ')[1:]
+
+    pattern = r'^a\/([^\s]+) b\/(.|\n)*(@@ (.|\n)*)$'
+    matches = [re.match(pattern, c) for c in chunks]
+    files_list = [(m.group(1), m.group(3)) for m in matches if m]
+    files = {}
+    for name, content in files_list:
+        files[name] = content
+
+    return files
+
+
+def parse_diff(diff):
+    tasks_list = []
+
+    files = _diff_to_file_dict(diff)
+    todo_pattern = r'\+.*((#)|(\/\/)) TODO ?(.*)'
+
+    for name, content in files.items():
+        found = re.findall(todo_pattern, content)
+        for m in found:
+            tasks_list.append({
+                'name': m[3].strip() or 'No name',
+                'file': name,
+                'line': 0,  # TODO
+                'description': ''  # TODO
+            })
+
+    return tasks_list
+
+
+def order_tasks(tasks):
+    for t, i in zip(tasks, range(len(tasks))):
+        t['order'] = i
+
+
 def project_exists(name):
     return name in api.projects
+
 
 def init_project(project_name):
     if os.path.exists(project_name):
@@ -108,7 +149,7 @@ def init_project(project_name):
             f.write(default_gitignore)
 
         with open(os.path.join(project_name, '.editorconfig'), 'w') as f:
-            default_editorconfig= '''root = true
+            default_editorconfig = '''root = true
 
 # basic configuration
 [*]
@@ -140,10 +181,12 @@ indent-size = 2
     repo.create_branch(branch_name)
     repo.change_branch(branch_name)
 
+
 # TODO each of these usage functions should just be part of an instruction
 def init_usage():
     return '''Usage:
   tig init :project-name'''
+
 
 def tig_usage():
     # this is a function and not just a flat value to remind me to add some dynamic data to it
@@ -158,6 +201,7 @@ def init(arguments):
     else:
         print init_usage()
 
+
 def save(arguments):
     if len(arguments) > 0:
         # TODO handle arguments
@@ -167,10 +211,12 @@ def save(arguments):
         repo.add()
         repo.commit('Automated commit')
 
+
 def sync(arguments):
     # TODO improve flag parsing
     RESOLVE = any([a in ('-r', '--resolve') for a in arguments])
     sync_repo(RESOLVE)
+
 
 def daemon(arguments):
     SLEEP_TIME = 5  # seconds
@@ -178,33 +224,35 @@ def daemon(arguments):
         save()
         time.sleep(SLEEP_TIME)
 
+
 def tasks(arguments):
-    JSON = any([a in ('--json') for a in arguments])
+    JSON = '--json' in arguments
 
     # TODO
-    raw_tasks = [
-        {
-            "order": 1,
-            "name": "Lorem ipsum",
-            "description": "dolor sit amet",
-            "author": "sikor",
-            "date": "2015-12-30T00:00:00Z",
-        },
-        {
-            "order": 2,
-            "name": "consectetur adipiscing",
-            "description": "elit sed do",
-            "author": "sikor",
-            "date": "2015-12-30T00:00:00Z",
-        },
-        {
-            "order": 3,
-            "name": "incididunt ut labore",
-            "description": "et dolore magna aliqua",
-            "author": "sikor",
-            "date": "2015-12-30T00:00:00Z",
-        },
-    ]
+    repo = Repo(os.getcwd())
+    commits = repo.log
+
+    # we'll use commit hashes to refer to specific commits while diffing
+    hashes = list(reversed([c['hash'] for c in commits]))  # from oldest
+
+    pairs = zip(hashes[:-1], hashes[1:])
+    diffs = [repo.diff(a, b) for a, b in pairs]
+    first_diff_show = repo._execute('show {}'.format(hashes[0]))
+    first_diff = first_diff_show[first_diff_show.find('diff --git'):]
+    diffs = [first_diff] + diffs
+    parsed_tasks = [parse_diff(d) for d in diffs]
+
+    raw_tasks = []
+    for commit, tasks in zip(commits, parsed_tasks):
+        for t in tasks:
+            raw_tasks.append({
+                "name": t['name'],
+                "description": t['description'],
+                "author": commit['author'],
+                "date": commit['date'],
+            })
+
+    order_tasks(raw_tasks)
 
     if JSON:
         output = json.dumps(raw_tasks)
@@ -214,12 +262,19 @@ def tasks(arguments):
 
     print output
 
+
+def log(arguments):
+    repo = Repo(os.getcwd())
+    print repo.log
+
+
 commands = {
     'init': init,
     'save': save,
     'sync': sync,
     'daemon': daemon,
     'tasks': tasks,
+    'log': log,  # test command
 }
 
 if __name__ == "__main__":
