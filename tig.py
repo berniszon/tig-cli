@@ -197,7 +197,9 @@ def init_usage():
 
 def tig_usage():
     # this is a function and not just a flat value to remind me to add some dynamic data to it
-    return '''init :project-name
+    return '''tig 0.0.0
+
+    init :project-name
     Join or create a new project'''
 
 
@@ -286,6 +288,13 @@ def test(arguments=[]):
         print reduce(lambda a, b: a + b, map(str, errors), '')
 
 
+def team(arguments=[]):
+    print 'Working as {}@{}'.format(NAME, TEAM)
+    print 'Projects:'
+    for p in api.projects:
+        print '  ' + p
+
+
 commands = {
     'init': init,
     'save': save,
@@ -294,6 +303,7 @@ commands = {
     'tasks': tasks,
     'log': log,
     'test': test,
+    'team': team,
 }
 
 if __name__ == "__main__":
