@@ -46,6 +46,7 @@ class FileSystemMockAPI(object):
         path = os.path.join(self._remote, self._team, project_name + '.git')
         os.makedirs(path)
         subprocess.call(['git', 'init', '--bare'], cwd=path)
+        subprocess.call(['git', 'branch', 'tig-master'], cwd=path)
 
 
 api = FileSystemMockAPI(REMOTE, TEAM, NAME)
