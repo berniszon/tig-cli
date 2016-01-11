@@ -10,10 +10,27 @@ import re
 from git import Repo
 
 
-# TODO config
-REMOTE = '/Users/grzegorz/Projects/Tig/remotes'
-TEAM = 'sigmapoint'
-NAME = 'sikor'
+identity_path = os.environ.get('IDENTITY')
+if identity_path:
+    with open(identity_path) as f:
+        data = json.loads(f.read())
+
+        REMOTE = data['remote']
+        TEAM = data['team']
+        NAME = data['name']
+        AUTHOR_NAME = data['author_name']
+        AUTHOR_EMAIL = data['author_email']
+
+else:
+    REMOTE = '/Users/grzegorz/Projects/Tig/remotes'
+    TEAM = 'sigmapoint'
+    NAME = 'sikor'
+    AUTHOR_NAME = 'Grzegorz Sikorski'
+    AUTHOR_EMAIL = 'grzegorz.sikorski@sigmapoint.pl'
+
+
+def author():
+    return AUTHOR_NAME + ' <' + AUTHOR_EMAIL + '>'
 
 # initialize directories
 try:
@@ -46,8 +63,7 @@ class FileSystemMockAPI(object):
         path = os.path.join(self._remote, self._team, project_name + '.git')
         os.makedirs(path)
         subprocess.call(['git', 'init', '--bare'], cwd=path)
-        subprocess.call(['git', 'branch', 'tig-master'], cwd=path)
-
+        # cannot create branches until we have a commit
 
 api = FileSystemMockAPI(REMOTE, TEAM, NAME)
 
@@ -57,17 +73,48 @@ def get_sync_branch(branch):
         return branch[:-len('-' + NAME)]
 
 
+def get_unresolved_conflicts(repo):
+    output = []
+    base = repo.current_branch[:-len('-merge')]
+    files = _diff_to_file_dict(repo.diff(base, repo.current_branch))
+    conflict_pattern = r'.<<<<<<< HEAD\n(.+\n)*.=======\n(.+\n)*.>>>>>>> tig-master-'+ NAME + '\n'
+    for name, content in files.items():
+        count = 0
+        for m in re.findall(conflict_pattern, content):
+            count += 1
+        if count > 0:
+            output.append(name)
+    return output
+
+
 @contextmanager
 def temporary_branch(repo, start=None):
     start = start or repo.current_branch
     name = 'tig-temporary-'
     repo.create_branch(name, start)
     yield name
-    repo.delete_branch(name)
+    repo.delete_branch(name, force=True)
 
 
-def sync_repo(resolve=False):
-    repo = Repo(os.getcwd())
+def sync_repo(resolve, finish):
+    repo = Repo(os.getcwd(), author())
+
+    if finish:
+        if repo.current_branch.endswith(NAME + '-merge'):
+            save()
+            conflicts = get_unresolved_conflicts(repo)
+            if not conflicts:
+                source = repo.current_branch
+                repo.change_branch('tig-master-' + NAME)
+                repo.merge(source)
+            else:
+                print 'Unable to sync - unresolved conflicts'
+                for c in conflicts:
+                    print '  ' + c
+                exit(1)
+        else:
+            print 'Unable to finish sync - you are not on a resolve branch'
+            exit(1)
 
     sync_branch = get_sync_branch(repo.current_branch)
     if sync_branch:
@@ -81,16 +128,18 @@ def sync_repo(resolve=False):
                 repo.push(sync_branch)                         # update remote
             else:
                 if resolve:
-                    # TODO
-                    print 'resolve conflicts'
+                    save()
+                    repo.create_branch('tig-master-' + NAME + '-merge')
+                    repo.change_branch('tig-master-' + NAME + '-merge')
+                    print 'Resolve conflicts now, end with `tig sync --finish`'
                 else:
-                    # TODO
-                    print 'abort everything'
+                    print 'Conflicting changes, sync aborted. Use `tig sync --resolve` to resolve conflicts now'
     else:
         print 'Unable to sync - you are not on a synching branch'
 
 
 def _diff_to_file_dict(diff):
+    # TODO Extract line information
     chunks = diff.split('diff --git ')[1:]
 
     pattern = r'^a\/([^\s]+) b\/(.|\n)*(@@ (.|\n)*)$'
@@ -138,7 +187,7 @@ def init_project(project_name):
 
     if not project_exists(project_name):
         api.create_project(project_name)
-        repo = Repo.clone(api.project_url(project_name), '.', project_name)
+        repo = Repo.clone(api.project_url(project_name), '.', project_name, author())
 
 
         # TODO this is a silly way to create an initial config, with file contents in a silly spot among the code
@@ -177,17 +226,18 @@ indent-size = 2
         repo.push()
         repo._execute('tag 0.0.0')
         repo.push()  # just the tag
+        repo.create_branch('tig-master')
+        repo.push('tig-master')
 
     else:
-        repo = Repo.clone(api.project_url(project_name), '.', project_name)
+        repo = Repo.clone(api.project_url(project_name), '.', project_name, author())
+        repo.create_branch('tig-master')
 
-    common_sync_branch_name = 'tig-master'
-    personal_sync_branch_name = common_sync_branch_name + '-{}'.format(NAME)
+    branch_name = 'tig-master' + '-' + NAME
 
-    repo.create_branch(common_sync_branch_name)
-    repo.pull(common_sync_branch_name)
-    repo.create_branch(personal_sync_branch_name, common_sync_branch_name)
-    repo.change_branch(personal_sync_branch_name)
+    repo.pull('tig-master')
+    repo.create_branch(branch_name, 'tig-master')
+    repo.change_branch(branch_name)
 
 
 # TODO each of these usage functions should just be part of an instruction
@@ -198,10 +248,25 @@ def init_usage():
 
 def tig_usage():
     # this is a function and not just a flat value to remind me to add some dynamic data to it
-    return '''tig 0.0.0
+    return '''tig 0.0.0  # I already don't like that I have to keep this updated manually
 
-    init :project-name
-    Join or create a new project'''
+commands:
+    init <PROJECT_NAME>
+        Start a new project, or join an existing one - try `tig team` for suggestions.
+    team
+        Information about your team and your projects
+    daemon
+    save
+    sync
+    status
+    tasks
+    log
+    test
+    done
+
+env:
+    IDENTITY
+'''
 
 
 def init(arguments=[]):
@@ -216,7 +281,7 @@ def save(arguments=[]):
     if len(arguments) > 0:
         # TODO handle arguments
         pass  # for now just dismiss them
-    repo = Repo(os.getcwd())
+    repo = Repo(os.getcwd(), author())
     if repo.changes:  # apparently empty list is falsy
         repo.add()
         repo.commit('Automated commit')
@@ -229,21 +294,22 @@ def save(arguments=[]):
 def sync(arguments=[]):
     # TODO improve flag parsing
     RESOLVE = any([a in ('-r', '--resolve') for a in arguments])
-    sync_repo(RESOLVE)
+    FINISH = any([a in ('-f', '--finish') for a in arguments])
+    sync_repo(RESOLVE, FINISH)
 
 
 def daemon(arguments=[]):
     SLEEP_TIME = 5  # seconds
     while True:
-        save()
+        sync()
         time.sleep(SLEEP_TIME)
 
 
 def tasks(arguments=[]):
     JSON = '--json' in arguments
 
-    repo = Repo(os.getcwd())
-    commits = repo.log
+    repo = Repo(os.getcwd(), author())
+    commits = repo.log2
 
     # we'll use commit hashes to refer to specific commits while diffing
     hashes = list(reversed([c['hash'] for c in commits]))  # from oldest
@@ -277,8 +343,8 @@ def tasks(arguments=[]):
 
 
 def log(arguments=[]):
-    repo = Repo(os.getcwd())
-    print repo.log
+    repo = Repo(os.getcwd(), author())
+    print repo.log2
 
 
 def test(arguments=[]):
@@ -296,7 +362,12 @@ def team(arguments=[]):
         print '  ' + p
 
 
+def done(arguments):
+    pass
+
+
 commands = {
+    'team': team,
     'init': init,
     'save': save,
     'sync': sync,
@@ -304,7 +375,7 @@ commands = {
     'tasks': tasks,
     'log': log,
     'test': test,
-    'team': team,
+    'done': done,
 }
 
 if __name__ == "__main__":

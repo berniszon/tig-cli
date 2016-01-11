@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import re
 import os
 import arrow
+import json
 
 
 # TODO git probably has some switch to output easily parsable data, remove the re
@@ -18,13 +19,14 @@ log_matcher = re.compile(LOG_PATTERN)
 class Repo(object):
     """Git CLI sucks, most methods here don't follow it's default semantics.
 """
-    def __init__(self, path):
+    def __init__(self, path, author):
         self._path = path
+        self._author = author
 
     @classmethod
-    def clone(cls, remote, path, name):
+    def clone(cls, remote, path, name, author):
         output = check_output('git clone {} {}'.format(remote, name), cwd=path, shell=True)
-        return Repo(os.path.join(path, name))
+        return Repo(os.path.join(path, name), author)
 
     def _execute(self, command):
         try:
@@ -32,7 +34,8 @@ class Repo(object):
             return check_output('git ' + command, cwd=self._path, shell=True)
         except CalledProcessError as e:
             # TODO some calls (like commit with no changes) fail, handle exceptions
-            raise e
+            # raise e
+            pass
 
     @property
     def changes(self):
@@ -65,6 +68,25 @@ class Repo(object):
             for l in log_matcher.findall(self._execute('--no-pager log --date=iso-strict'))
         ]
 
+    # TODO Parse tags correctly
+    def _parse_tags(self, tags):
+        tag_pattern = r'tag: (.+?),'
+        output = []
+        for m in re.findall(tag_pattern, tags):
+            output.append(m)
+        return output
+
+    @property
+    def log2(self):
+        pretty_format = '\'{%n  "hash": "%H",%n  "author": "%an <%ae>",%n  "date": "%ad",%n  "message": "%f",%n  "tags": "%d"%n},\''
+        logs_json_string = '[' + self._execute('--no-pager log --date=iso-strict --pretty=format:{}'.format(pretty_format))[:-1] + ']'
+        logs = json.loads(logs_json_string)
+        output = []
+        for l in logs:
+            l['tags'] = self._parse_tags(l['tags'])
+            output.append(l)
+        return output
+
     # TODO tig doesn't care for index, so no argument diff is useless
     # feel free to implement defaults
     # def diff(self, base=None, to=None):
@@ -82,16 +104,16 @@ class Repo(object):
     def commit(self, message):
         """Changed semantic - commit changes to tracked files by default
 """
-        return self._execute('commit -am "{}"'.format(message))
+        return self._execute('commit --author="{}" -am "{}"'.format(self._author, message))
 
     def create_branch(self, name, revision=''):
         # TODO consider adding option to change to the newly created branch
         assert name not in self.branches
         return self._execute("branch {} {}".format(name, revision))
 
-    def delete_branch(self, name):
+    def delete_branch(self, name, force=False):
         assert name in self.branches
-        return self._execute("branch -d {}".format(name))
+        return self._execute("branch {} {}".format('-D' if force else '-d', name))
 
     def change_branch(self, name):
         assert name in self.branches
