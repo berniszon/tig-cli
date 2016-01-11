@@ -54,32 +54,18 @@ class Repo(object):
     def branches(self):
         return sorted([branch_matcher.match(l).group(1) for l in self._execute('branch').split('\n')[:-1]])
 
-    # TODO filters
-    @property
-    def log(self):
-        return [
-            {
-                'hash': l[0],
-                'author': l[1],
-                'email': l[2],
-                'date': arrow.get(l[3]).isoformat(),
-                'message': '\n'.join([line[4:] for line in l[4].split('\n')[:-1]]),
-            }
-            for l in log_matcher.findall(self._execute('--no-pager log --date=iso-strict'))
-        ]
-
     # TODO Parse tags correctly
     def _parse_tags(self, tags):
-        tag_pattern = r'tag: (.+?),'
+        tag_pattern = r'tag: (.+?)[,)]'
         output = []
         for m in re.findall(tag_pattern, tags):
             output.append(m)
         return output
 
-    @property
-    def log2(self):
-        pretty_format = '\'{%n  "hash": "%H",%n  "author": "%an <%ae>",%n  "date": "%ad",%n  "message": "%f",%n  "tags": "%d"%n},\''
-        logs_json_string = '[' + self._execute('--no-pager log --date=iso-strict --pretty=format:{}'.format(pretty_format))[:-1] + ']'
+    def log(self, branch=None):
+        branch = branch or self.current_branch
+        pretty_format = '\'{%n  "hash": "%H",%n  "author": "%cn <%ae>",%n  "date": "%ad",%n  "message": "%f",%n  "tags": "%d"%n},\''
+        logs_json_string = '[' + self._execute('--no-pager log {} --date=iso-strict --pretty=format:{}'.format(branch, pretty_format))[:-1] + ']'
         logs = json.loads(logs_json_string)
         output = []
         for l in logs:

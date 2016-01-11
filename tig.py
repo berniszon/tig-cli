@@ -66,6 +66,7 @@ class FileSystemMockAPI(object):
         # cannot create branches until we have a commit
 
 api = FileSystemMockAPI(REMOTE, TEAM, NAME)
+repo = Repo(os.getcwd(), author())
 
 
 def get_sync_branch(branch):
@@ -97,8 +98,6 @@ def temporary_branch(repo, start=None):
 
 
 def sync_repo(resolve, finish):
-    repo = Repo(os.getcwd(), author())
-
     if finish:
         if repo.current_branch.endswith(NAME + '-merge'):
             save()
@@ -107,6 +106,7 @@ def sync_repo(resolve, finish):
                 source = repo.current_branch
                 repo.change_branch('tig-master-' + NAME)
                 repo.merge(source)
+                repo.delete_branch(source)
             else:
                 print 'Unable to sync - unresolved conflicts'
                 for c in conflicts:
@@ -281,7 +281,6 @@ def save(arguments=[]):
     if len(arguments) > 0:
         # TODO handle arguments
         pass  # for now just dismiss them
-    repo = Repo(os.getcwd(), author())
     if repo.changes:  # apparently empty list is falsy
         repo.add()
         repo.commit('Automated commit')
@@ -308,8 +307,7 @@ def daemon(arguments=[]):
 def tasks(arguments=[]):
     JSON = '--json' in arguments
 
-    repo = Repo(os.getcwd(), author())
-    commits = repo.log2
+    commits = repo.log()
 
     # we'll use commit hashes to refer to specific commits while diffing
     hashes = list(reversed([c['hash'] for c in commits]))  # from oldest
@@ -343,8 +341,18 @@ def tasks(arguments=[]):
 
 
 def log(arguments=[]):
-    repo = Repo(os.getcwd(), author())
-    print repo.log2
+    # TODO Rework log
+    # this is quick dirty mix between human readable and json output
+
+    automated_commit_count = 0
+    for l in repo.log():
+        if l['tags']:
+            if automated_commit_count > 0:
+                print '{} commits'.format(automated_commit_count)
+            automated_commit_count = 0
+            print l
+        else:
+            automated_commit_count += 1
 
 
 def test(arguments=[]):
@@ -363,7 +371,18 @@ def team(arguments=[]):
 
 
 def done(arguments):
-    pass
+    sync()
+
+    if repo.merge('tig-master', 'master', ff_only=True):
+        repo.push('master')
+        last_tag = repo._execute('describe master --abbrev=0 --tags')
+        tag_pattern = r'(\d+)\.(\d+)\.(\d+)'
+        m = re.match(tag_pattern, last_tag)
+        release = int(m.group(1))
+        prototype = int(m.group(2))
+        patch = int(m.group(3))
+        repo._execute('tag {}.{}.{}'.format(release, prototype + 1, patch))
+        repo.push()  # just the tag
 
 
 commands = {
